@@ -1,0 +1,15 @@
+-prefix 
+C:\Qt4 
+-debug-and-release 
+-make 
+nmake 
+-nomake 
+examples 
+-nomake 
+tests 
+-nomake 
+demos 
+-opensource 
+-confirm-license 
+-platform 
+win32-msvc2015 
