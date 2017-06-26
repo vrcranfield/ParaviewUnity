@@ -241,14 +241,17 @@ Unity3D::Unity3D(QObject *p) : QActionGroup(p), unityPlayerProcess(NULL) {
 	embeddedAction->setData(UNITY_PLAYER_ACTION);
 	this->addAction(embeddedAction);
 
-	// Editor mode
-	QIcon exportActionIcon(QPixmap(":/Unity3D/resources/editor.png"));
-	exportActionIcon.addPixmap(QPixmap(":/Unity3D/resources/editor_selected.png"),
-		QIcon::Mode::Selected);
-	QAction *exportAction =
-		new QAction(exportActionIcon, "Export to Unity Editor", this);
-	exportAction->setData(UNITY_EDITOR_ACTION);
-	this->addAction(exportAction);
+
+	// ld314 Comment out editor mode. We don't need it right now
+	//// Editor mode
+	//QIcon exportActionIcon(QPixmap(":/Unity3D/resources/editor.png"));
+	//exportActionIcon.addPixmap(QPixmap(":/Unity3D/resources/editor_selected.png"),
+	//	QIcon::Mode::Selected);
+	//QAction *exportAction =
+	//	new QAction(exportActionIcon, "Export to Unity Editor", this);
+	//exportAction->setData(UNITY_EDITOR_ACTION);
+	//this->addAction(exportAction);
+	
 	QObject::connect(this, SIGNAL(triggered(QAction *)), this,
 		SLOT(onAction(QAction *)));
 }
