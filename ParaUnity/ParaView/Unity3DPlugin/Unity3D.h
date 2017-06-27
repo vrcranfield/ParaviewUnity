@@ -17,7 +17,7 @@ private:
     int port;
     QString workingDir;
     QString playerWorkingDir;
-	void exportToUnityPlayer(pqServerManagerModel* sm);
+		void exportToUnityPlayer(pqServerManagerModel* sm);
     void exportToUnityEditor(pqServerManagerModel* sm);
 public slots:
     void onAction(QAction* a);

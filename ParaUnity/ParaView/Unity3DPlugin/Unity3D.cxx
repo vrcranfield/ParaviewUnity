@@ -20,6 +20,7 @@
 #include <vtkX3DExporter.h>
 #include <vtkPVPluginsInformation.h>
 #include <vtkSMPropertyHelper.h>
+#include "vtkOutputWindow.h"
 
 #include "pqAnimationManager.h"
 #include "pqActiveObjects.h"
@@ -49,6 +50,10 @@ bool Unity3D::sendMessage(const QString& message, int port) {
 	if (!socket->waitForConnected()) {
 		return false;
 	}
+
+	// Print message to console
+	vtkOutputWindow::GetInstance()->DisplayDebugText(std::string("Sending message: " + message.toStdString()).c_str());
+
 	socket->write(QByteArray(message.toLatin1()));
 	socket->waitForBytesWritten();
 	socket->waitForDisconnected();
@@ -218,6 +223,7 @@ void Unity3D::exportScene(pqServerManagerModel *sm,
 		exporter->SetFileName(exportFile.toLatin1());
 		exporter->Write();
 
+
 		message = exportFile;
 	}
 
@@ -242,15 +248,14 @@ Unity3D::Unity3D(QObject *p) : QActionGroup(p), unityPlayerProcess(NULL) {
 	this->addAction(embeddedAction);
 
 
-	// ld314 Comment out editor mode. We don't need it right now
-	//// Editor mode
-	//QIcon exportActionIcon(QPixmap(":/Unity3D/resources/editor.png"));
-	//exportActionIcon.addPixmap(QPixmap(":/Unity3D/resources/editor_selected.png"),
-	//	QIcon::Mode::Selected);
-	//QAction *exportAction =
-	//	new QAction(exportActionIcon, "Export to Unity Editor", this);
-	//exportAction->setData(UNITY_EDITOR_ACTION);
-	//this->addAction(exportAction);
+	// Editor mode
+	QIcon exportActionIcon(QPixmap(":/Unity3D/resources/editor.png"));
+	exportActionIcon.addPixmap(QPixmap(":/Unity3D/resources/editor_selected.png"),
+		QIcon::Mode::Selected);
+	QAction *exportAction =
+		new QAction(exportActionIcon, "Export to Unity Editor", this);
+	exportAction->setData(UNITY_EDITOR_ACTION);
+	this->addAction(exportAction);
 	
 	QObject::connect(this, SIGNAL(triggered(QAction *)), this,
 		SLOT(onAction(QAction *)));
