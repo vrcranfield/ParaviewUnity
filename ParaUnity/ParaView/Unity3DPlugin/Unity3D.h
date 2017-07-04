@@ -18,6 +18,11 @@ class Unity3D : public QActionGroup
     Q_OBJECT
 public:
     Unity3D(QObject* p);
+		bool sendMessage(const QString&, int port);
+		bool sendMessageExpectingReply(const QString & message, int port);
+		void exportSceneToFile(pqServerManagerModel * sm, const QString & exportLocation, int port);
+		void exportSceneToSharedMemory(pqServerManagerModel *sm, const QString& exportLocation, int port);
+		void freeSharedMemory();
 private:
     QProcess* unityPlayerProcess;
     int port;
@@ -26,17 +31,13 @@ private:
 		void exportToUnityPlayer(pqServerManagerModel* sm);
     void exportToUnityEditor(pqServerManagerModel* sm);
 
+		// Fields for Shared Memory allocations
 		HANDLE handle;
 		char *pBuf;
 		QTcpSocket *socket;
 public slots:
     void onAction(QAction* a);
-	bool sendMessage(const QString&, int port);
-	bool sendMessageExpectingReply(const QString & message, int port);
-	void exportSceneToFile(pqServerManagerModel * sm, const QString & exportLocation, int port);
-	void exportSceneToSharedMemory(pqServerManagerModel *sm, const QString& exportLocation, int port);
-	void freeSharedMemory();
-	void readyRead();
+		void readyRead();
 };
 
 #endif // Unity3D_h
