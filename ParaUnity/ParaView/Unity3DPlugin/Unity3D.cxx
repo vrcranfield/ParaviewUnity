@@ -82,14 +82,9 @@ void Unity3D::readyRead() {
 
 	if(reply.compare(QString("OK")) == 0)
 		freeSharedMemory();
-		this->previousBuf = this->currentBuf;
-		this->previousHandle = this->currentHandle;
-		freeSharedMemory();
 	else if (re.indexIn(reply) != -1) {
 		int lastImportedFrame = re.cap(2).toInt();
 		freeSharedMemory();
-		this->previousBuf = this->currentBuf;
-		this->previousHandle = this->currentHandle;
 		if (lastImportedFrame < this->totalFrames - 1) {
 			exportNextFrame();
 
@@ -302,32 +297,27 @@ void Unity3D::exportSceneToSharedMemory(pqServerManagerModel *sm, int port) {
 	else {
 		exporter->SetInput(renderProxy->GetRenderWindow());
 		exporter->Write();
-		this->objectName = this->objectNameRoot;
 	}
 
 	this->objectSize = exporter->GetOutputStringLength() * sizeof(char);
 	
 	writeExporterStringToSharedMemory();
 
-	
 	QString message(objectName + QString(";;") + QString::number(objectSize));
 
 	if (totalFrames > 0)
 		message += QString(";;") + QString::number(this->lastExportedFrame) + QString(";;") + QString::number(this->totalFrames);
 
 	if (!sendMessageExpectingReply(message, port)) {
-		QMessageBox::critical(NULL, tr("Unity Error"), tr("Unable to communicate to Unity process"));
-	}
-
-	if (totalFrames > 1) {
-		exportNextFrame();
+		QMessageBox::critical(NULL, tr("Unity Error"),
+													tr("Unable to communicate to Unity process"));
 	}
 }
 
 
 //-----------------------------------------------------------------------------
 void Unity3D::writeExporterStringToSharedMemory() {
-	this->currentHandle = CreateFileMapping(
+	this->handle = CreateFileMapping(
 		INVALID_HANDLE_VALUE,			// use paging file
 		NULL,											// default security
 		PAGE_READWRITE,						// read/write access
@@ -335,26 +325,28 @@ void Unity3D::writeExporterStringToSharedMemory() {
 		objectSize,								// maximum object size (low-order DWORD)
 		objectName);							// name of mapping object
 
-	if (!currentHandle || currentHandle == INVALID_HANDLE_VALUE)
+	if (!handle || handle == INVALID_HANDLE_VALUE)
 	{
-		QMessageBox::critical(NULL, tr("Unity Error"), tr(std::string("Could not create file mapping object: " + GetLastError()).c_str()));
+		QMessageBox::critical(NULL, tr("Unity Error"),
+													tr(std::string("Could not create file mapping object: " + GetLastError()).c_str()));
 		return;
 	}
 
-	currentBuf = (char *)MapViewOfFile(currentHandle,   // handle to map object
+	pBuf = (char *)MapViewOfFile(handle,   // handle to map object
 															 FILE_MAP_ALL_ACCESS, // read/write permission
 															 0,
 															 0,
 															 objectSize);
 
-	if (currentBuf == NULL)
+	if (pBuf == NULL)
 	{
-		QMessageBox::critical(NULL, tr("Unity Error"), tr(std::string("Could not map view of file: " + GetLastError()).c_str()));
-		CloseHandle(currentHandle);
+		QMessageBox::critical(NULL, tr("Unity Error"),
+													tr(std::string("Could not map view of file: " + GetLastError()).c_str()));
+		CloseHandle(handle);
 		return;
 	}
 
-	CopyMemory((void *)currentBuf, exporter->GetOutputString(), objectSize);
+	CopyMemory((void *)pBuf, exporter->GetOutputString(), objectSize);
 }
 
 
@@ -372,9 +364,8 @@ void Unity3D::exportFirstFrame() {
 	this->exporter->Write();
 
 	this->lastExportedFrame = 0;
-	this->objectName = this->objectNameRoot + QString::number(lastExportedFrame).toStdString().c_str();
 
-	// If it's the last one, do this
+	// Of it's the last one, do this
 	if (lastExportedFrame == totalFrames - 1) {
 		animationProp.Set(animationProp.GetAsDouble());
 	}
@@ -394,14 +385,13 @@ void Unity3D::exportNextFrame() {
 	this->exporter->SetInput(renderProxy->GetRenderWindow());
 	this->exporter->Write();
 
-	lastExportedFrame++;
-
 	this->objectSize = exporter->GetOutputStringLength() * sizeof(char);
 
-	this->objectName = this->objectNameRoot + QString::number(lastExportedFrame).toStdString().c_str();
 	writeExporterStringToSharedMemory();
 
-	// If it's the last one, do this
+	lastExportedFrame++;
+
+	// Of it's the last one, do this
 	if (lastExportedFrame == totalFrames - 1) {
 		animationProp.Set(animationProp.GetAsDouble());
 	}
@@ -410,14 +400,14 @@ void Unity3D::exportNextFrame() {
 
 //-----------------------------------------------------------------------------
 void Unity3D::freeSharedMemory() {
-	if (previousBuf != NULL) {
-		UnmapViewOfFile(previousBuf);
-		previousBuf = NULL;
+	if (pBuf != NULL) {
+		UnmapViewOfFile(pBuf);
+		pBuf = NULL;
 	}
 
-	if (previousHandle != NULL) {
-		CloseHandle(previousHandle);
-		previousHandle = NULL;
+	if (handle != NULL) {
+		CloseHandle(handle);
+		handle = NULL;
 	}
 }
 
@@ -447,7 +437,6 @@ Unity3D::Unity3D(QObject *p) : QActionGroup(p), unityPlayerProcess(NULL) {
 	this->addAction(exportAction);
 
 	this->exporter = vtkX3DExporter::New();
-	this->objectNameRoot = "Global\\ParaviewOutput";
 	this->objectName = "Global\\ParaviewOutput";
 	
 	QObject::connect(this, SIGNAL(triggered(QAction *)), this,
