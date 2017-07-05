@@ -48,11 +48,16 @@ public:
 		void exportNextFrame();
 		void freeSharedMemory();
 
-		HANDLE handle;
-		char *pBuf;
+		HANDLE previousHandle;
+		char *previousBuf;
+		HANDLE currentHandle;
+		char *currentBuf;
 		QTcpSocket *socket;
+
+		char *objectNameRoot;
 		char *objectName;
 		unsigned long objectSize;
+
 		int totalFrames;
 		int lastExportedFrame;
 
