@@ -7,6 +7,26 @@
 #include <QActionGroup>
 #include "pqServerManagerModel.h"
 
+#include <vtkPolyData.h>
+#include <vtkPolyDataMapper.h>
+#include <vtkRenderWindow.h>
+#include <vtkSMRenderViewProxy.h>
+#include <vtkSphereSource.h>
+#include <vtkX3DExporter.h>
+#include <vtkPVPluginsInformation.h>
+#include <vtkSMPropertyHelper.h>
+#include "vtkOutputWindow.h"
+
+#include "pqAnimationManager.h"
+#include "pqActiveObjects.h"
+#include "pqPluginManager.h"
+#include "pqAnimationScene.h"
+#include "pqApplicationCore.h"
+#include "pqPVApplicationCore.h"
+#include "pqPipelineSource.h"
+#include "pqRenderView.h"
+#include "pqServer.h"
+
 #include <windows.h>
 #include <stdio.h>
 #include <conio.h>
@@ -18,11 +38,26 @@ class Unity3D : public QActionGroup
     Q_OBJECT
 public:
     Unity3D(QObject* p);
-		bool sendMessage(const QString&, int port);
+		bool pollClient(int port);
+		bool sendMessage(const QString& message, int port);
 		bool sendMessageExpectingReply(const QString & message, int port);
-		void exportSceneToFile(pqServerManagerModel * sm, const QString & exportLocation, int port);
-		void exportSceneToSharedMemory(pqServerManagerModel *sm, const QString& exportLocation, int port);
+		void exportSceneToFile(pqServerManagerModel * sm, const QString& exportLocation, int port);
+		void exportSceneToSharedMemory(pqServerManagerModel *sm, int port);
+		void writeExporterStringToSharedMemory();
+		void exportNextFrame();
 		void freeSharedMemory();
+
+		HANDLE handle;
+		char *pBuf;
+		QTcpSocket *socket;
+		char *objectName;
+		unsigned long objectSize;
+		int totalFrames;
+		int lastExportedFrame;
+
+		vtkX3DExporter *exporter = vtkX3DExporter::New();
+		vtkSMRenderViewProxy *renderProxy;
+
 private:
     QProcess* unityPlayerProcess;
     int port;
@@ -32,9 +67,6 @@ private:
     void exportToUnityEditor(pqServerManagerModel* sm);
 
 		// Fields for Shared Memory allocations
-		HANDLE handle;
-		char *pBuf;
-		QTcpSocket *socket;
 public slots:
     void onAction(QAction* a);
 		void readyRead();
