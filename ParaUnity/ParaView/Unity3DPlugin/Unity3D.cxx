@@ -83,7 +83,7 @@ void Unity3D::readyRead() {
 	if(reply.compare(QString("OK")) == 0)
 		freeSharedMemory();
 	else if (re.indexIn(reply) != -1) {
-		int lastImportedFrame = re.cap(1).toInt();
+		int lastImportedFrame = re.cap(2).toInt();
 		freeSharedMemory();
 		if (lastImportedFrame < this->totalFrames - 1) {
 			exportNextFrame();
