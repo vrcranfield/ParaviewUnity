@@ -44,6 +44,7 @@ public:
 		void exportSceneToFile(pqServerManagerModel * sm, const QString& exportLocation, int port);
 		void exportSceneToSharedMemory(pqServerManagerModel *sm, int port);
 		void writeExporterStringToSharedMemory();
+		void exportFirstFrame();
 		void exportNextFrame();
 		void freeSharedMemory();
 

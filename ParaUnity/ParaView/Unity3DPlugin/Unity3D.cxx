@@ -285,13 +285,12 @@ void Unity3D::exportSceneToSharedMemory(pqServerManagerModel *sm, int port) {
 	exporter->SetWriteToOutputString(true);
 
 	this->totalFrames = scene->getTimeSteps().length();
-	this->lastExportedFrame = -1;
 
 	// Multiple frames, right now one at a time
 	if (totalFrames > 0) {
 		vtkOutputWindow::GetInstance()->DisplayDebugText(std::string("Exporting animation of frames: " + QString::number(totalFrames).toStdString()).c_str());
 		vtkSMPropertyHelper animationProp(scene->getProxy(), "AnimationTime");
-		exportNextFrame();
+		exportFirstFrame();
 	}
 	
 	// Single frame case
@@ -352,6 +351,28 @@ void Unity3D::writeExporterStringToSharedMemory() {
 
 
 //-----------------------------------------------------------------------------
+void Unity3D::exportFirstFrame() {
+	pqPVApplicationCore *core = pqPVApplicationCore::instance();
+	pqAnimationScene *scene = core->animationManager()->getActiveScene();
+
+	vtkSMPropertyHelper animationProp(scene->getProxy(), "AnimationTime");
+
+	animationProp.Set(scene->getTimeSteps()[0]);
+	scene->getProxy()->UpdateVTKObjects();
+
+	this->exporter->SetInput(renderProxy->GetRenderWindow());
+	this->exporter->Write();
+
+	this->lastExportedFrame = 0;
+
+	// Of it's the last one, do this
+	if (lastExportedFrame == totalFrames - 1) {
+		animationProp.Set(animationProp.GetAsDouble());
+	}
+}
+
+
+//-----------------------------------------------------------------------------
 void Unity3D::exportNextFrame() {
 	pqPVApplicationCore *core = pqPVApplicationCore::instance();
 	pqAnimationScene *scene = core->animationManager()->getActiveScene();
@@ -363,6 +384,8 @@ void Unity3D::exportNextFrame() {
 
 	this->exporter->SetInput(renderProxy->GetRenderWindow());
 	this->exporter->Write();
+
+	this->objectSize = exporter->GetOutputStringLength() * sizeof(char);
 
 	writeExporterStringToSharedMemory();
 
