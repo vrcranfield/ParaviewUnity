@@ -12,28 +12,8 @@
 #include <QThread>
 #include <QTime>
 
-#include <vtkPolyData.h>
-#include <vtkPolyDataMapper.h>
-#include <vtkRenderWindow.h>
-#include <vtkSMRenderViewProxy.h>
-#include <vtkSphereSource.h>
-#include <vtkX3DExporter.h>
-#include <vtkPVPluginsInformation.h>
-#include <vtkSMPropertyHelper.h>
-#include "vtkOutputWindow.h"
-
-#include "pqAnimationManager.h"
-#include "pqActiveObjects.h"
-#include "pqPluginManager.h"
-#include "pqAnimationScene.h"
-#include "pqApplicationCore.h"
-#include "pqPVApplicationCore.h"
-#include "pqPipelineSource.h"
-#include "pqRenderView.h"
-#include "pqServer.h"
-
 #ifdef Q_OS_WIN
-#include <windows.h>
+
 #endif
 
 #include "LoadingSplashScreen.h"
@@ -43,21 +23,80 @@
 #define UNITY_EDITOR_ACTION "UNITY_EDITOR_ACTION"
 
 //-----------------------------------------------------------------------------
+static void LogDebug(QString message) {
+	vtkOutputWindow::GetInstance()->DisplayDebugText(message.toStdString().c_str());
+}
 
-bool Unity3D::sendMessage(const QString& message, int port) {
+bool Unity3D::pollClient(int port) {
+
 	QTcpSocket *socket = new QTcpSocket(this);
+
 	socket->connectToHost("127.0.0.1", port);
+	
+	bool connected = socket->waitForConnected();
+	
+	socket->abort();
+	
+	return connected;
+}
+
+//-----------------------------------------------------------------------------
+bool Unity3D::sendMessage(const QString& message, int port) {
+	
+	socket = new QTcpSocket(this);
+	socket->connectToHost("127.0.0.1", port);
+	
 	if (!socket->waitForConnected()) {
 		return false;
 	}
 
-	// Print message to console
-	vtkOutputWindow::GetInstance()->DisplayDebugText(std::string("Sending message: " + message.toStdString()).c_str());
+	LogDebug("Sending message: " + message);
 
 	socket->write(QByteArray(message.toLatin1()));
 	socket->waitForBytesWritten();
-	socket->waitForDisconnected();
+	//socket->waitForDisconnected();
 	return true;
+}
+
+//-----------------------------------------------------------------------------
+
+bool Unity3D::sendMessageExpectingReply(const QString& message, int port) {
+	
+	bool result = sendMessage(message, port);
+		
+	if(result)
+		QObject::connect(socket, SIGNAL(readyRead()), this, SLOT(readyRead()));
+
+	return result;
+}
+
+//-----------------------------------------------------------------------------
+
+void Unity3D::readyRead() {
+
+	QString reply = QString(socket->readAll());
+
+	LogDebug("Received reply: " + reply);
+
+	QRegExp re;
+	re.setPattern("^(OK )(\\d+)");
+
+	if(reply.compare(QString("OK")) == 0)
+		freeSharedMemory();
+	else if (re.indexIn(reply) != -1) {
+		int lastImportedFrame = re.cap(2).toInt();
+		freeSharedMemory();
+		if (lastImportedFrame < this->totalFrames - 1) {
+			exportNextFrame();
+
+			QString message(objectName + QString(";;") + QString::number(objectSize) + QString(";;") + QString::number(this->lastExportedFrame) + QString(";;") + QString::number(this->totalFrames));
+
+			if (!sendMessageExpectingReply(message, this->port)) {
+				QMessageBox::critical(NULL, tr("Unity Error"),
+															tr("Unable to communicate to Unity process"));
+			}
+		}
+	}
 }
 
 //-----------------------------------------------------------------------------
@@ -102,7 +141,6 @@ static QString getUnityPlayerBinary(const QString& workingDir) {
 }
 
 //-----------------------------------------------------------------------------
-
 static int getPortNumberFrom(const QString& playerWorkingDir) {
 	QFileInfoList files = QDir(playerWorkingDir).entryInfoList();
 	foreach(const QFileInfo &file, files) {
@@ -114,11 +152,23 @@ static int getPortNumberFrom(const QString& playerWorkingDir) {
 }
 
 //-----------------------------------------------------------------------------
-
 bool fileExists(const QString& path) {
 	QFileInfo check_file(path);
 	// check if file exists and if yes: Is it really a file and no directory?
 	return (check_file.exists() && check_file.isFile());
+}
+
+//-----------------------------------------------------------------------------
+bool dirExists(const std::string& dirName_in)
+{
+	DWORD ftyp = GetFileAttributesA(dirName_in.c_str());
+	if (ftyp == INVALID_FILE_ATTRIBUTES)
+		return false;  //something is wrong with your path!
+
+	if (ftyp & FILE_ATTRIBUTE_DIRECTORY)
+		return true;   // this is a directory!
+
+	return false;    // this is not a directory!
 }
 
 //-----------------------------------------------------------------------------
@@ -176,7 +226,7 @@ static int findPortFile(const QString& playerWorkingDir) {
 }
 
 //-----------------------------------------------------------------------------
-void Unity3D::exportScene(pqServerManagerModel *sm, 
+void Unity3D::exportSceneToFile(pqServerManagerModel *sm, 
 	const QString& exportLocation, int port) {
 	QList<pqRenderView *> renderViews = sm->findItems<pqRenderView *>();
 	vtkSMRenderViewProxy *renderProxy = renderViews[0]->getRenderViewProxy();
@@ -187,7 +237,7 @@ void Unity3D::exportScene(pqServerManagerModel *sm,
 	pqAnimationScene* scene = core->animationManager()->getActiveScene();
 
 	QString message;
-  
+
 	if (scene->getTimeSteps().length() > 0) {
 		vtkSMPropertyHelper animationProp(scene->getProxy(), "AnimationTime");
 		double lastTime = animationProp.GetAsDouble();
@@ -234,8 +284,155 @@ void Unity3D::exportScene(pqServerManagerModel *sm,
 }
 
 //-----------------------------------------------------------------------------
+void Unity3D::exportSceneToSharedMemory(pqServerManagerModel *sm, int port) {
+	
+	QList<pqRenderView *> renderViews = sm->findItems<pqRenderView *>();
+	
+	this->renderProxy = renderViews[0]->getRenderViewProxy();
+	
+	pqPVApplicationCore *core = pqPVApplicationCore::instance();
+	pqAnimationScene *scene = core->animationManager()->getActiveScene();
+
+	// Write to a field in the exporter
+	exporter->SetWriteToOutputString(true);
+
+	this->totalFrames = scene->getTimeSteps().length();
+
+	// Multiple frames, right now one at a time
+	if (totalFrames > 0) {
+		LogDebug("Exporting animation of frames: " + QString::number(totalFrames));
+
+		vtkSMPropertyHelper animationProp(scene->getProxy(), "AnimationTime");
+		exportFirstFrame();
+	}
+	
+	// Single frame case
+	else {
+		exporter->SetInput(renderProxy->GetRenderWindow());
+		exporter->Write();
+	}
+
+	this->objectSize = exporter->GetOutputStringLength() * sizeof(char);
+	
+	writeExporterStringToSharedMemory();
+
+	QString message(objectName + QString(";;") + QString::number(objectSize));
+
+	if (totalFrames > 0)
+		message += QString(";;") + QString::number(this->lastExportedFrame) + QString(";;") + QString::number(this->totalFrames);
+
+	if (!sendMessageExpectingReply(message, port)) {
+		QMessageBox::critical(NULL, tr("Unity Error"),
+													tr("Unable to communicate to Unity process"));
+	}
+}
+
+
+//-----------------------------------------------------------------------------
+void Unity3D::writeExporterStringToSharedMemory() {
+	this->handle = CreateFileMapping(
+		INVALID_HANDLE_VALUE,			// use paging file
+		NULL,											// default security
+		PAGE_READWRITE,						// read/write access
+		0,												// maximum object size (high-order DWORD)
+		objectSize,								// maximum object size (low-order DWORD)
+		objectName);							// name of mapping object
+
+	if (!handle || handle == INVALID_HANDLE_VALUE)
+	{
+		QMessageBox::critical(NULL, tr("Unity Error"),
+													tr(std::string("Could not create file mapping object: " + GetLastError()).c_str()));
+		return;
+	}
+
+	pBuf = (char *)MapViewOfFile(handle,   // handle to map object
+															 FILE_MAP_ALL_ACCESS, // read/write permission
+															 0,
+															 0,
+															 objectSize);
+
+	if (pBuf == NULL)
+	{
+		QMessageBox::critical(NULL, tr("Unity Error"),
+													tr(std::string("Could not map view of file: " + GetLastError()).c_str()));
+		CloseHandle(handle);
+		return;
+	}
+
+	CopyMemory((void *)pBuf, exporter->GetOutputString(), objectSize);
+}
+
+
+//-----------------------------------------------------------------------------
+void Unity3D::exportFirstFrame() {
+	pqPVApplicationCore *core = pqPVApplicationCore::instance();
+	pqAnimationScene *scene = core->animationManager()->getActiveScene();
+
+	vtkSMPropertyHelper animationProp(scene->getProxy(), "AnimationTime");
+
+	animationProp.Set(scene->getTimeSteps()[0]);
+	scene->getProxy()->UpdateVTKObjects();
+
+	this->exporter->SetInput(renderProxy->GetRenderWindow());
+	this->exporter->Write();
+
+	this->lastExportedFrame = 0;
+
+	// Of it's the last one, do this
+	if (lastExportedFrame == totalFrames - 1) {
+		animationProp.Set(animationProp.GetAsDouble());
+	}
+}
+
+
+//-----------------------------------------------------------------------------
+void Unity3D::exportNextFrame() {
+	pqPVApplicationCore *core = pqPVApplicationCore::instance();
+	pqAnimationScene *scene = core->animationManager()->getActiveScene();
+
+	vtkSMPropertyHelper animationProp(scene->getProxy(), "AnimationTime");
+
+	animationProp.Set(scene->getTimeSteps()[lastExportedFrame + 1]);
+	scene->getProxy()->UpdateVTKObjects();
+
+	this->exporter->SetInput(renderProxy->GetRenderWindow());
+	this->exporter->Write();
+
+	this->objectSize = exporter->GetOutputStringLength() * sizeof(char);
+
+	writeExporterStringToSharedMemory();
+
+	lastExportedFrame++;
+
+	// Of it's the last one, do this
+	if (lastExportedFrame == totalFrames - 1) {
+		animationProp.Set(animationProp.GetAsDouble());
+	}
+}
+
+
+//-----------------------------------------------------------------------------
+void Unity3D::freeSharedMemory() {
+	if (pBuf != NULL) {
+		UnmapViewOfFile(pBuf);
+		pBuf = NULL;
+	}
+
+	if (handle != NULL) {
+		CloseHandle(handle);
+		handle = NULL;
+	}
+}
+
+
+//-----------------------------------------------------------------------------
 Unity3D::Unity3D(QObject *p) : QActionGroup(p), unityPlayerProcess(NULL) {
 	this->workingDir = QDir::tempPath() + "/Unity3DPlugin";
+
+	// Create directory if it doesn't exist
+	if (!dirExists(this->workingDir.toStdString())) {
+		CreateDirectory(this->workingDir.toStdString().c_str(), NULL);
+	}
 
 	// Player mode
 	QIcon embeddedActionIcon(QPixmap(":/Unity3D/resources/player.png"));
@@ -256,6 +453,13 @@ Unity3D::Unity3D(QObject *p) : QActionGroup(p), unityPlayerProcess(NULL) {
 		new QAction(exportActionIcon, "Export to Unity Editor", this);
 	exportAction->setData(UNITY_EDITOR_ACTION);
 	this->addAction(exportAction);
+
+	
+	this->exporter = vtkX3DExporter::New();
+
+	// Info about the name https://msdn.microsoft.com/en-us/library/aa366537.aspx
+	// and https://msdn.microsoft.com/en-us/library/aa382954.aspx
+	this->objectName = "ParaviewOutput";
 	
 	QObject::connect(this, SIGNAL(triggered(QAction *)), this,
 		SLOT(onAction(QAction *)));
@@ -294,25 +498,37 @@ void Unity3D::exportToUnityPlayer(pqServerManagerModel *sm) {
 			return;
 		}
 
-		this->playerWorkingDir = this->workingDir + "/Embedded/" +
+		QString exportLocations(this->workingDir + "/Embedded/");
+
+		// Create directory if it doesn't exist
+		if (!dirExists(exportLocations.toStdString())) {
+			CreateDirectory(exportLocations.toStdString().c_str(), NULL);
+		}
+
+		this->playerWorkingDir = exportLocations +
 			QString::number(getProcessID(this->unityPlayerProcess));
 
 		this->port = findPortFile(playerWorkingDir);
 	}
 
-	exportScene(sm, this->playerWorkingDir, this->port);
+	exportSceneToSharedMemory(sm, this->port);
 }
 
 //-----------------------------------------------------------------------------
 void Unity3D::exportToUnityEditor(pqServerManagerModel *sm) {
 	QString exportLocations(this->workingDir + "/Editor");
 
+	// Create directory if it doesn't exist
+	if (!dirExists(exportLocations.toStdString())) {
+		CreateDirectory(exportLocations.toStdString().c_str(), NULL);
+	}
+
 	QList<int> activeUnityInstances;
 	foreach(const QString &dir, QDir(exportLocations).entryList()) {
 		if (dir != "." && dir != "..") {
 			int port = dir.toInt();
 
-			if (sendMessage("TEST", port)) {
+			if (pollClient(port)) {
 				activeUnityInstances << port;
 			}
 			else {
@@ -330,8 +546,8 @@ void Unity3D::exportToUnityEditor(pqServerManagerModel *sm) {
 			tr("Multiple Unity instances are running at the same time"));
 	}
 	else {
-		QString exportLocation = exportLocations + "/" + QString::number(activeUnityInstances[0]);
-		exportScene(sm, exportLocation, activeUnityInstances[0]);
+		this->port = activeUnityInstances[0];
+		exportSceneToSharedMemory(sm, this->port);
 	}
 }
 
