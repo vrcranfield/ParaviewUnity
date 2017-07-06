@@ -436,8 +436,12 @@ Unity3D::Unity3D(QObject *p) : QActionGroup(p), unityPlayerProcess(NULL) {
 	exportAction->setData(UNITY_EDITOR_ACTION);
 	this->addAction(exportAction);
 
+	
 	this->exporter = vtkX3DExporter::New();
-	this->objectName = "Global\\ParaviewOutput";
+
+	// Info about the name https://msdn.microsoft.com/en-us/library/aa366537.aspx
+	// and https://msdn.microsoft.com/en-us/library/aa382954.aspx
+	this->objectName = "ParaviewOutput";
 	
 	QObject::connect(this, SIGNAL(triggered(QAction *)), this,
 		SLOT(onAction(QAction *)));
