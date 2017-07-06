@@ -140,7 +140,6 @@ static QString getUnityPlayerBinary(const QString& workingDir) {
 }
 
 //-----------------------------------------------------------------------------
-
 static int getPortNumberFrom(const QString& playerWorkingDir) {
 	QFileInfoList files = QDir(playerWorkingDir).entryInfoList();
 	foreach(const QFileInfo &file, files) {
@@ -152,11 +151,23 @@ static int getPortNumberFrom(const QString& playerWorkingDir) {
 }
 
 //-----------------------------------------------------------------------------
-
 bool fileExists(const QString& path) {
 	QFileInfo check_file(path);
 	// check if file exists and if yes: Is it really a file and no directory?
 	return (check_file.exists() && check_file.isFile());
+}
+
+//-----------------------------------------------------------------------------
+bool dirExists(const std::string& dirName_in)
+{
+	DWORD ftyp = GetFileAttributesA(dirName_in.c_str());
+	if (ftyp == INVALID_FILE_ATTRIBUTES)
+		return false;  //something is wrong with your path!
+
+	if (ftyp & FILE_ATTRIBUTE_DIRECTORY)
+		return true;   // this is a directory!
+
+	return false;    // this is not a directory!
 }
 
 //-----------------------------------------------------------------------------
@@ -416,6 +427,11 @@ void Unity3D::freeSharedMemory() {
 Unity3D::Unity3D(QObject *p) : QActionGroup(p), unityPlayerProcess(NULL) {
 	this->workingDir = QDir::tempPath() + "/Unity3DPlugin";
 
+	// Create directory if it doesn't exist
+	if (!dirExists(this->workingDir.toStdString())) {
+		CreateDirectory(this->workingDir.toStdString().c_str(), NULL);
+	}
+
 	// Player mode
 	QIcon embeddedActionIcon(QPixmap(":/Unity3D/resources/player.png"));
 	embeddedActionIcon.addPixmap(
@@ -480,7 +496,14 @@ void Unity3D::exportToUnityPlayer(pqServerManagerModel *sm) {
 			return;
 		}
 
-		this->playerWorkingDir = this->workingDir + "/Embedded/" +
+		QString exportLocations(this->workingDir + "/Embedded/");
+
+		// Create directory if it doesn't exist
+		if (!dirExists(exportLocations.toStdString())) {
+			CreateDirectory(exportLocations.toStdString().c_str(), NULL);
+		}
+
+		this->playerWorkingDir = exportLocations +
 			QString::number(getProcessID(this->unityPlayerProcess));
 
 		this->port = findPortFile(playerWorkingDir);
@@ -492,6 +515,11 @@ void Unity3D::exportToUnityPlayer(pqServerManagerModel *sm) {
 //-----------------------------------------------------------------------------
 void Unity3D::exportToUnityEditor(pqServerManagerModel *sm) {
 	QString exportLocations(this->workingDir + "/Editor");
+
+	// Create directory if it doesn't exist
+	if (!dirExists(exportLocations.toStdString())) {
+		CreateDirectory(exportLocations.toStdString().c_str(), NULL);
+	}
 
 	QList<int> activeUnityInstances;
 	foreach(const QString &dir, QDir(exportLocations).entryList()) {
