@@ -22,6 +22,11 @@
 
 #define UNITY_EDITOR_ACTION "UNITY_EDITOR_ACTION"
 
+//-----------------------------------------------------------------------------
+static void LogDebug(QString message) {
+	vtkOutputWindow::GetInstance()->DisplayDebugText(message.toStdString().c_str());
+}
+
 bool Unity3D::pollClient(int port) {
 
 	QTcpSocket *socket = new QTcpSocket(this);
@@ -32,16 +37,12 @@ bool Unity3D::pollClient(int port) {
 	
 	socket->abort();
 	
-	// TODO fix memory leak
-	//delete socket;
-	
 	return connected;
 }
 
 //-----------------------------------------------------------------------------
-
 bool Unity3D::sendMessage(const QString& message, int port) {
-	// TODO fix memory leak
+	
 	socket = new QTcpSocket(this);
 	socket->connectToHost("127.0.0.1", port);
 	
@@ -49,7 +50,7 @@ bool Unity3D::sendMessage(const QString& message, int port) {
 		return false;
 	}
 
-	vtkOutputWindow::GetInstance()->DisplayDebugText(std::string("Sending message: " + message.toStdString()).c_str());
+	LogDebug("Sending message: " + message);
 
 	socket->write(QByteArray(message.toLatin1()));
 	socket->waitForBytesWritten();
@@ -75,7 +76,7 @@ void Unity3D::readyRead() {
 
 	QString reply = QString(socket->readAll());
 
-	vtkOutputWindow::GetInstance()->DisplayDebugText(std::string("Received reply: " + reply.toStdString()).c_str());
+	LogDebug("Received reply: " + reply);
 
 	QRegExp re;
 	re.setPattern("^(OK )(\\d+)");
@@ -299,7 +300,8 @@ void Unity3D::exportSceneToSharedMemory(pqServerManagerModel *sm, int port) {
 
 	// Multiple frames, right now one at a time
 	if (totalFrames > 0) {
-		vtkOutputWindow::GetInstance()->DisplayDebugText(std::string("Exporting animation of frames: " + QString::number(totalFrames).toStdString()).c_str());
+		LogDebug("Exporting animation of frames: " + QString::number(totalFrames));
+
 		vtkSMPropertyHelper animationProp(scene->getProxy(), "AnimationTime");
 		exportFirstFrame();
 	}
