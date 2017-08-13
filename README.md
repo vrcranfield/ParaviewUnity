@@ -37,7 +37,7 @@ This is a plugin for ParaView that comes from [here](https://github.com/RCBiczok
 
 In order to build ParaUnity do the following:
 
-  * Open a terminal in `\ParaUnity\ParaView\Unity3DPlugin`
+  * Open a terminal in `\ParaUnity\Unity3DPlugin`
   * `mkdir build`
   * `cd build`
   * `cmake -G "Visual Studio 14 2015 Win64" -DParaView_DIR="<PARAVIEW_DIR>\build" ..` (*`<PARAVIEW_DIR>` is most likely `../../../../ParaView-5.2.0`*)
@@ -60,7 +60,7 @@ Once the scene is set up, from the Unity IDE do the following:
   * Make sure only the scene you are interested in is checked
   * Set `Target Platform` as `Windows` and `Architecture` as `x86_64`.
   * Hit build
-  * Choose the same location as the `Unity3D.dll` (something like `\ParaUnity\ParaView`Unity3DPlugin\build\Debug`)
+  * Choose the same location as the `Unity3D.dll` (something like `\ParaUnity\Unity3DPlugin\build\Debug`)
   * Save the file as `unity_player.exe`. **The filename is important as right now it's hardcoded in the plugin!**
 
 ### Loading the plugin into ParaView
